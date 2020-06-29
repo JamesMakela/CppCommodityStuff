@@ -16,9 +16,35 @@
 
 #include "CmdOptionParser.hpp"
 
+
+class Exception
+{
+protected:
+    std::string m_error;
+public:
+    Exception(std::string error) : m_error(error) {}
+
+    const char* getError() const { return m_error.c_str(); }
+};
+
+
+class IndexError : public Exception
+{
+public:
+    IndexError(std::string error) : Exception(error) {}
+};
+
+
+class FileError : public Exception
+{
+public:
+    FileError(std::string error) : Exception(error) {}
+};
+
+
 // We are trying out variants to solve the problem of arbitrary data types
-// coming from CSV fields.  Nothing usable yet.
-using Cell = std::variant<int, long, double, std::string>;
+// coming from CSV fields.
+using Cell = std::variant<double, std::string>;
 
 struct CellPrintVisitor1
 {
@@ -44,29 +70,16 @@ struct CellPrintVisitor1
 };
 
 
-// helper constant for CellPrintVisitor2
-template<class> inline constexpr bool always_false_v = false;
-
-auto CellPrintVisitor2 = [](auto&& arg) {
-    using T = std::decay_t<decltype(arg)>;
-    if constexpr (std::is_same_v<T, int>)
-        std::cout << "int with value " << arg << '\n';
-    else if constexpr (std::is_same_v<T, long>)
-        std::cout << "long with value " << arg << '\n';
-    else if constexpr (std::is_same_v<T, double>)
-        std::cout << "double with value " << arg << '\n';
-    else if constexpr (std::is_same_v<T, std::string>)
-        std::cout << "std::string with value " << std::quoted(arg) << '\n';
-    else 
-        static_assert(always_false_v<T>, "non-exhaustive visitor!");
-};
-
-
 class CSVRow
 {
 private:
-    std::vector<Cell> fields{};
+protected:
+    std::vector<Cell> m_fields{};
 public:
+    CSVRow() {
+        // std::cout << "CSVRow()...\n";
+    }
+
     CSVRow(std::string &strRow) {
         if (strRow.length() == 0) return;
 
@@ -74,9 +87,13 @@ public:
         std::string field;
 
         while(std::getline(ssRow, field, '\t')) {
-            fields.push_back(getField(field));
+            m_fields.push_back(getField(field));
         }
     }
+
+	~CSVRow() {
+		// std::cerr << "CSVRow cleaned up\n";
+	}
 
     Cell getField(std::string &field) {
         double numField{};
@@ -98,22 +115,166 @@ public:
         }
     }
 
+    int size() const {
+        return m_fields.size();
+    }
+
+    Cell& operator[] (int index) {
+        return m_fields[index];
+    }
+
+    const Cell& operator[] (int index) const {
+        return m_fields[index];
+    }
+
 	friend std::ostream& operator<<(std::ostream &out, const CSVRow &row) {
 		return row.print(out);
 	}
 
     virtual std::ostream& print(std::ostream& out) const {
         std::vector<Cell>::const_iterator it;
-        it = fields.cbegin();
+        it = m_fields.cbegin();
 
 		out << "(";
-        while (it + 1 < fields.cend())  // stop just 1 before the end
+        while (it + 1 < m_fields.cend())  // stop just 1 before the end
         {
             std::visit(CellPrintVisitor1{out},
                        *it);
             ++it;
         }
         std::visit(CellPrintVisitor1{out, ")"}, *it);
+
+		return out;
+	}
+};
+
+class CSVColumn : public CSVRow
+{
+private:
+public:
+    CSVColumn(const std::vector<CSVRow>& rows, int index) {
+        int max_len{max_length(rows)};
+
+        if (index < 0) {
+            index = max_len + index;
+        }
+
+        if (index >= max_len) {
+            throw IndexError{"IndexError: column number too big!"};
+        }
+        else if (index < 0) {
+            throw IndexError{"IndexError: column number too small!"};
+        }
+
+        std::vector<CSVRow>::const_iterator it;
+        it = rows.cbegin();
+
+        while (it < rows.cend()) {
+            if (index >= (*it).size()) {
+                m_fields.push_back("");
+            }
+            else {
+                m_fields.push_back((*it)[index]);
+            }
+            ++it;
+        }
+    }
+
+	~CSVColumn() {
+		// std::cerr << "CSVColumn cleaned up\n";
+	}
+
+    int max_length(const std::vector<CSVRow> &rows) {
+        int max_len = 0;
+        std::vector<CSVRow>::const_iterator it;
+        it = rows.cbegin();
+
+        while (it < rows.cend()) {
+            if (max_len < (*it).size()) {
+                max_len = (*it).size();
+            }
+            ++it;
+        }
+
+        return max_len;
+    }
+
+	friend std::ostream& operator<<(std::ostream &out, const CSVColumn &col) {
+		return col.print(out);
+	}
+
+    virtual std::ostream& print(std::ostream& out) const {
+        std::vector<Cell>::const_iterator it;
+        it = m_fields.cbegin();
+
+		out << "(";
+        while (it + 1 < m_fields.cend())  // stop just 1 before the end
+        {
+            std::visit(CellPrintVisitor1{out},
+                       *it);
+            ++it;
+        }
+        std::visit(CellPrintVisitor1{out, ")"}, *it);
+
+		return out;
+	}
+};
+
+class CSVFile
+{
+private:
+    std::vector<CSVRow> m_rows{};
+public:
+    CSVFile(std::string filePath) {
+        std::ifstream inFile{filePath};
+
+        if (!inFile) {
+            throw FileError{"FileException: Could not open file for reading!"};
+        }
+
+        for(int count=0; inFile;) {
+            std::string strLine;
+            std::getline(inFile, strLine);
+
+            if (strLine.length() > 0) {
+                m_rows.push_back(strLine);
+            }
+        }
+    }
+
+	~CSVFile() {
+		std::cerr << "CSVFile cleaned up\n";
+	}
+
+    CSVRow getRow(int index) {
+        if (index < 0) {
+            index = m_rows.size() + index;
+        }
+
+        if (index >= m_rows.size()) {
+            throw IndexError{"IndexError: row number too big!"};
+        }
+
+        return m_rows[index];
+    }
+
+    CSVColumn getColumn(int index) {
+        return CSVColumn(m_rows, index);
+    }
+
+	friend std::ostream& operator<<(std::ostream &out, const CSVFile &csvFile) {
+		return csvFile.print(out);
+	}
+
+    virtual std::ostream& print(std::ostream& out) const {
+        std::vector<CSVRow>::const_iterator it;
+        it = m_rows.cbegin();
+
+		out << "(";
+        while (it + 1 < m_rows.cend()) {  // stop just 1 before the end
+            out << *it++ << ", ";
+        }
+        out << *it << ")";
 
 		return out;
 	}
@@ -138,29 +299,67 @@ int main(int argc, const char *argv[])
         return 1;
     }
 
-    std::cout << "opening file: " << filePath << "\n";
+    std::cout << "opening CSVFile: " << filePath << "\n";
+    try {
+        CSVFile csvFile{filePath};
 
-    std::ifstream inFile{filePath};
+        std::cout << csvFile << "\n";  // check that we can print it out
 
-    if (!inFile) {
-        // Print an error and exit
-        std::cerr << "Error, " << filePath
-                  << " could not be opened for reading!"
-                  << std::endl;
-        return 1;
-    }
+        // normal index into the rows
+        std::cout << "\nRow 10: " << csvFile.getRow(10) << "\n";
 
-    for(int count=0; inFile;) {
-        std::string strLine;
-        std::getline(inFile, strLine);
+        // last index into the rows
+        std::cout << "\nRow 1496: " << csvFile.getRow(1496) << "\n";
 
-        if (strLine.length() > 0) {
-            CSVRow csvRow{strLine};
+        // negative index into the rows (should be same as last index)
+        std::cout << "\nRow -1: " << csvFile.getRow(-1) << "\n";
 
-            std::cout << ++count << ": " << csvRow << "\n";
+        // normal index into the columns
+        std::cout << "\nColumn 1: " << csvFile.getColumn(1) << "\n";
+
+        // last index into the columns
+        std::cout << "\nColumn 158: " << csvFile.getColumn(158) << "\n";
+
+        // negative index into the columns (should be same as last index)
+        std::cout << "\nColumn -1: " << csvFile.getColumn(-1) << "\n";
+
+        try {
+            // row index too big
+            std::cout << "\nRow 1497: " << csvFile.getRow(1497) << "\n";
+        }
+        catch (const IndexError &exc){
+            std::cout << exc.getError() << "\n";
         }
 
+        try {
+            // negative row index too big
+            std::cout << "\nRow -1498: " << csvFile.getRow(-1498) << "\n";
+        }
+        catch (const IndexError &exc){
+            std::cout << exc.getError() << "\n";
+        }
+
+        try {
+            // column index too big
+            std::cout << "\nColumn 159: " << csvFile.getColumn(159) << "\n";
+        }
+        catch (const IndexError &exc){
+            std::cout << exc.getError() << "\n";
+        }
+
+        try {
+            // negative column index too big
+            std::cout << "\nColumn -160: " << csvFile.getColumn(-160) << "\n";
+        }
+        catch (const IndexError &exc){
+            std::cout << exc.getError() << "\n";
+        }
     }
+    catch (const FileError &exc) {
+        std::cout << exc.getError() << "\n";
+        exit(1);
+    }
+
     std::cout << "finished!...\n";
 
     return 0;

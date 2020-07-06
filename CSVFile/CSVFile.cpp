@@ -46,26 +46,25 @@ public:
 // coming from CSV fields.
 using Cell = std::variant<double, std::string>;
 
-struct CellPrintVisitor1
+struct CellPrint
 {
     std::ostream& m_out;
-    std::string m_sep{};
 
-    CellPrintVisitor1(std::ostream& out, std::string sep=", ")
-        : m_out{out}, m_sep{sep}
+    CellPrint(std::ostream& out)
+        : m_out{out}
     {}
 
     void operator()(int i) const { 
-        m_out << i << m_sep; 
+        m_out << i; 
     }
     void operator()(long l) const { 
-        m_out << l << m_sep; 
+        m_out << l; 
     }
     void operator()(double f) const { 
-        m_out << f << m_sep; 
+        m_out << f; 
     }
     void operator()(const std::string& s) const { 
-        m_out << s << m_sep; 
+        m_out << s; 
     }
 };
 
@@ -138,11 +137,12 @@ public:
 		out << "(";
         while (it + 1 < m_fields.cend())  // stop just 1 before the end
         {
-            std::visit(CellPrintVisitor1{out},
-                       *it);
+            std::visit(CellPrint{out}, *it);
+            out << ", ";
             ++it;
         }
-        std::visit(CellPrintVisitor1{out, ")"}, *it);
+        std::visit(CellPrint{out}, *it);
+        out << ")";
 
 		return out;
 	}
@@ -210,11 +210,12 @@ public:
 		out << "(";
         while (it + 1 < m_fields.cend())  // stop just 1 before the end
         {
-            std::visit(CellPrintVisitor1{out},
-                       *it);
+            std::visit(CellPrint{out}, *it);
+            out << ", ";
             ++it;
         }
-        std::visit(CellPrintVisitor1{out, ")"}, *it);
+        std::visit(CellPrint{out}, *it);
+        out << ")";
 
 		return out;
 	}
@@ -251,8 +252,11 @@ public:
             index = m_rows.size() + index;
         }
 
-        if (index >= m_rows.size()) {
+        if (index >= static_cast<int>(m_rows.size())) {
             throw IndexError{"IndexError: row number too big!"};
+        }
+        else if (index < 0) {
+            throw IndexError{"IndexError: row number too small!"};
         }
 
         return m_rows[index];
@@ -260,6 +264,23 @@ public:
 
     CSVColumn getColumn(int index) {
         return CSVColumn(m_rows, index);
+    }
+
+    Cell getCell(int row, int column) {
+        CSVRow csvRow{getRow(row)};
+
+        if (column < 0) {
+            column = csvRow.size() + column;
+        }
+
+        if (column >= static_cast<int>(csvRow.size())) {
+            throw IndexError{"IndexError: column number too big!"};
+        }
+        else if (column < 0) {
+            throw IndexError{"IndexError: column number too small!"};
+        }
+
+        return csvRow[column];
     }
 
 	friend std::ostream& operator<<(std::ostream &out, const CSVFile &csvFile) {
@@ -323,6 +344,21 @@ int main(int argc, const char *argv[])
         // negative index into the columns (should be same as last index)
         std::cout << "\nColumn -1: " << csvFile.getColumn(-1) << "\n";
 
+        // Cell value
+        std::cout << "\nCell (0, 0): ";
+        std::visit(CellPrint{std::cout}, csvFile.getCell(0, 0));
+        std::cout << "\n";
+
+        // Cell value
+        std::cout << "\nCell (1, 1): ";
+        std::visit(CellPrint{std::cout}, csvFile.getCell(1, 1));
+        std::cout << "\n";
+
+        // negative Cell value
+        std::cout << "\nCell (-1, -1): ";
+        std::visit(CellPrint{std::cout}, csvFile.getCell(-1, -1));
+        std::cout << "\n";
+
         try {
             // row index too big
             std::cout << "\nRow 1497: " << csvFile.getRow(1497) << "\n";
@@ -354,6 +390,48 @@ int main(int argc, const char *argv[])
         catch (const IndexError &exc){
             std::cout << exc.getError() << "\n";
         }
+
+        try {
+            // Cell row too big
+            std::cout << "\nCell (1497, 1): ";
+            std::visit(CellPrint{std::cout}, csvFile.getCell(1497, 1));
+            std::cout << "\n";
+        }
+        catch (const IndexError &exc){
+            std::cout << exc.getError() << "\n";
+        }
+
+        try {
+            // Cell column too big
+            std::cout << "\nCell (1, 159): ";
+            std::visit(CellPrint{std::cout}, csvFile.getCell(1, 159));
+            std::cout << "\n";
+        }
+        catch (const IndexError &exc){
+            std::cout << exc.getError() << "\n";
+        }
+
+        try {
+            // negative Cell row too big
+            std::cout << "\nCell (-1498, 1): ";
+            std::visit(CellPrint{std::cout}, csvFile.getCell(-1498, 1));
+            std::cout << "\n";
+        }
+        catch (const IndexError &exc){
+            std::cout << exc.getError() << "\n";
+        }
+
+        try {
+            // negative Cell column too big
+            std::cout << "\nCell (1, -160): ";
+            std::visit(CellPrint{std::cout}, csvFile.getCell(1, -160));
+            std::cout << "\n";
+        }
+        catch (const IndexError &exc){
+            std::cout << exc.getError() << "\n";
+        }
+
+
     }
     catch (const FileError &exc) {
         std::cout << exc.getError() << "\n";

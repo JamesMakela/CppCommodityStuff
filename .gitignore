@@ -35,6 +35,8 @@
 *.Po
 *.Plo
 Makefile.in
+Makefile
+.libs
 
 /config.guess
 /config.log

@@ -13,7 +13,7 @@ AC_CONFIG_MACRO_DIR([m4])
 dnl Initialize automake
 AM_INIT_AUTOMAKE
 
-dnl this allows us specify individual liking flags for each target
+dnl this allows us to specify individual linking flags for each target
 AM_PROG_CC_C_O 
 
 dnl Initialize Libtool
@@ -22,5 +22,6 @@ LT_INIT
 AC_CONFIG_FILES(Makefile
                 include/Makefile
                 lib/Makefile
-                Hello/Makefile)
+                Hello/Makefile
+                CSVFile/Makefile)
 AC_OUTPUT

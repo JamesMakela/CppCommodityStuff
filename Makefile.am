@@ -1,5 +1,6 @@
 SUBDIRS = lib include \
-          Hello
+          Hello \
+          CSVFile
 
 ACLOCAL_AMFLAGS=-I m4
 

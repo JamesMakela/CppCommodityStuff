@@ -19,7 +19,8 @@ ACLOCAL_AMFLAGS=-I ../m4
 csv_file_SOURCES= CSVFile.cpp
 
 # Libraries for a.out
-csv_file_LDADD = $(top_srcdir)/lib/libCPPMisc.la
+csv_file_LDADD = $(top_srcdir)/lib/libCPPMisc.la \
+                 $(top_srcdir)/lib/libCSVFile.la
 
 # Linker options for a.out
 csv_file_LDFLAGS = -rpath `cd $(top_srcdir);pwd`/lib/.libs
